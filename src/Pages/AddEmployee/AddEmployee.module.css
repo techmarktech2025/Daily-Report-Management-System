@@ -1,0 +1,22 @@
+/* src/pages/AddEmployee/AddEmployee.module.css */
+.container {
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.formContainer {
+  margin-top: 2rem;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+@media (max-width: 768px) {
+  .buttonContainer {
+    flex-direction: column;
+  }
+}
