@@ -207,7 +207,7 @@ const AdminHome = () => {
                   sx={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white' }}
                 />
               </Box>
-              {adminDashboardData.materialRequests.pending > 0 && (
+              {adminDashboardData.materialRequests.pending > 0 && ( 
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <WarningIcon sx={{ fontSize: 16, mr: 0.5 }} />
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>

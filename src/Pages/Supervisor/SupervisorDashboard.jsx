@@ -1,5 +1,5 @@
-// src/Pages/Supervisor/SupervisorDashboard.jsx
-import React, { useState } from 'react';
+// src/Pages/Supervisor/SupervisorDashboardUpdated.jsx
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -19,7 +19,8 @@ import {
   Divider,
   Paper,
   Chip,
-  Button
+  Button,
+  Alert
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -35,13 +36,16 @@ import {
   People as EmployeesIcon,
   CallReceived as InwardIcon,
   CallMade as OutwardIcon,
-  Home as HomeIcon
+  Home as HomeIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProject } from '../../contexts/ProjectContext';
 
-// Import supervisor page components
+// Import supervisor components
 import SupervisorHome from './SupervisorHome/SupervisorHome';
+import SupervisorConfirmation from './SupervisorConfirmation/SupervisorConfirmation';
 import Attendance from './Attendance/Attendance';
 import ScopeOfWork from './ScopeOfWork/ScopeOfWork';
 import WorkProgress from './WorkProgress/WorkProgress';
@@ -76,7 +80,7 @@ const supervisorNavigation = [
   },
   {
     path: '/supervisor/work-progress',
-    title: 'Work in progress',
+    title: 'Work in Progress',
     icon: WorkProgressIcon,
     component: WorkProgress
   },
@@ -90,7 +94,7 @@ const supervisorNavigation = [
     path: '/supervisor/material-tool-request',
     title: 'Material & Tool Request',
     icon: MaterialToolIcon,
-    component: MaterialToolRequest
+    component: MaterialToolRequest // Use updated component
   },
   {
     path: '/supervisor/employees',
@@ -114,19 +118,49 @@ const supervisorNavigation = [
 
 const SupervisorDashboard = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authorizationStatus, setAuthorizationStatus] = useState('checking');
+  const [project, setProject] = useState(null);
+  
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { getProjectBySupervisor, needsConfirmation } = useProject();
 
-  // Get supervisor data from authenticated user
-  const supervisorData = user ? {
+  useEffect(() => {
+    checkAuthorizationStatus();
+  }, [user]);
+
+  const checkAuthorizationStatus = async () => {
+    if (user && user.employeeId) {
+      const userProject = getProjectBySupervisor(user.employeeId);
+      
+      if (userProject) {
+        setProject(userProject);
+        
+        // Check if supervisor needs confirmation
+        const needsAuth = needsConfirmation(userProject.id, user.employeeId);
+        setAuthorizationStatus(needsAuth ? 'needs_confirmation' : 'authorized');
+      } else {
+        setAuthorizationStatus('no_project');
+      }
+    } else {
+      setAuthorizationStatus('no_user');
+    }
+  };
+
+  const handleConfirmationComplete = () => {
+    setAuthorizationStatus('authorized');
+  };
+
+  // Get supervisor data from authenticated user and project
+  const supervisorData = user && project ? {
     name: user.name,
     id: user.employeeId,
     email: user.email,
-    project: user.assignedProjects?.[0]?.name || 'No Project Assigned',
-    location: user.assignedProjects?.[0]?.location || 'Location Not Set',
-    startDate: user.assignedProjects?.[0]?.startDate || '',
+    project: project.projectName || 'No Project Assigned',
+    location: project.location || 'Location Not Set',
+    startDate: project.createdAt ? new Date(project.createdAt).toLocaleDateString() : '',
     avatar: user.avatar || null
   } : {};
 
@@ -141,77 +175,96 @@ const SupervisorDashboard = () => {
     }
   };
 
+  // Show confirmation screen if needed
+  if (authorizationStatus === 'needs_confirmation') {
+    return <SupervisorConfirmation onConfirmationComplete={handleConfirmationComplete} />;
+  }
+
+  // Show loading state
+  if (authorizationStatus === 'checking') {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <Typography>Checking authorization...</Typography>
+      </Box>
+    );
+  }
+
+  // Show error states
+  if (authorizationStatus === 'no_project') {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          <Typography variant="h6">No Project Assigned</Typography>
+          <Typography>You are not currently assigned to any project. Please contact your administrator.</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (authorizationStatus === 'no_user') {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          <Typography variant="h6">Authentication Required</Typography>
+          <Typography>Please log in to access the supervisor dashboard.</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
   const drawer = (
     <Box>
       {/* Supervisor Profile Section */}
-      <Box sx={{ p: 3, backgroundColor: '#1976d2', color: 'white' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Avatar 
-            sx={{ 
-              width: 60, 
-              height: 60, 
-              mr: 2, 
-              backgroundColor: 'white', 
-              color: '#1976d2',
-              fontSize: '1.5rem',
-              fontWeight: 600
-            }}
-          >
+      <Paper sx={{ m: 2, p: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
             {supervisorData.name ? supervisorData.name.charAt(0).toUpperCase() : 'S'}
           </Avatar>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5, lineHeight: 1.2 }}>
+          <Box>
+            <Typography variant="subtitle1" fontWeight="bold">
               {supervisorData.name}
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.85rem' }}>
+            <Typography variant="caption" color="text.secondary">
               ID: {supervisorData.id}
             </Typography>
           </Box>
         </Box>
 
         {/* Project Information */}
-        <Paper 
-          elevation={0} 
-          sx={{ 
-            p: 2, 
-            backgroundColor: 'rgba(255,255,255,0.1)', 
-            borderRadius: 2,
-            backdropFilter: 'blur(10px)'
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '0.9rem' }}>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" color="primary">
             Current Project
           </Typography>
-          <Typography variant="body1" sx={{ fontWeight: 600, mb: 1, fontSize: '1rem' }}>
+          <Typography variant="body2" fontWeight="bold">
             {supervisorData.project}
           </Typography>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <LocationIcon sx={{ fontSize: 16, mr: 1, opacity: 0.8 }} />
-            <Typography variant="body2" sx={{ fontSize: '0.8rem', opacity: 0.9 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+            <LocationIcon sx={{ fontSize: 14, mr: 0.5, color: 'text.secondary' }} />
+            <Typography variant="caption" color="text.secondary">
               {supervisorData.location}
             </Typography>
           </Box>
-          
+
           {supervisorData.startDate && (
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <DateIcon sx={{ fontSize: 16, mr: 1, opacity: 0.8 }} />
-              <Typography variant="body2" sx={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                Started: {new Date(supervisorData.startDate).toLocaleDateString()}
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+              <DateIcon sx={{ fontSize: 14, mr: 0.5, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary">
+                Started: {supervisorData.startDate}
               </Typography>
             </Box>
           )}
-        </Paper>
-      </Box>
+        </Box>
+      </Paper>
 
       <Divider />
 
       {/* Navigation Menu */}
-      <List sx={{ pt: 2, px: 1 }}>
+      <List sx={{ px: 1 }}>
         {supervisorNavigation.map((navItem) => {
           const IconComponent = navItem.icon;
           const isActive = location.pathname === navItem.path || 
-                          (navItem.path === '/supervisor' && location.pathname === '/supervisor/');
+            (navItem.path === '/supervisor' && location.pathname === '/supervisor/');
           
           return (
             <ListItem key={navItem.path} disablePadding sx={{ mb: 0.5 }}>
@@ -230,21 +283,10 @@ const SupervisorDashboard = () => {
                   py: 1.2
                 }}
               >
-                <ListItemIcon 
-                  sx={{ 
-                    color: isActive ? 'white' : '#1976d2', 
-                    minWidth: 40 
-                  }}
-                >
+                <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
                   <IconComponent />
                 </ListItemIcon>
-                <ListItemText 
-                  primary={navItem.title}
-                  primaryTypographyProps={{
-                    fontSize: '0.95rem',
-                    fontWeight: isActive ? 600 : 500
-                  }}
-                />
+                <ListItemText primary={navItem.title} />
               </ListItemButton>
             </ListItem>
           );
@@ -252,58 +294,39 @@ const SupervisorDashboard = () => {
       </List>
 
       {/* Status Chips */}
-      <Box sx={{ px: 2, py: 1 }}>
-        <Divider sx={{ mb: 2 }} />
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Chip 
-            label="Online" 
-            color="success" 
-            size="small" 
-            sx={{ alignSelf: 'flex-start' }} 
-          />
-          <Chip 
-            label={`Project: ${supervisorData.project ? 'Active' : 'Inactive'}`}
-            color={supervisorData.project !== 'No Project Assigned' ? 'primary' : 'default'}
-            size="small" 
-            sx={{ alignSelf: 'flex-start' }} 
-          />
-        </Box>
+      <Box sx={{ px: 3, py: 2 }}>
+        <Chip 
+          label="Authorized" 
+          color="success" 
+          size="small" 
+          sx={{ mr: 1, mb: 1 }}
+        />
+        <Chip 
+          label="Active Project" 
+          color="info" 
+          size="small" 
+          sx={{ mb: 1 }}
+        />
       </Box>
 
-      <Divider sx={{ mt: 2 }} />
+      <Divider />
 
       {/* Logout Button */}
-      <List sx={{ px: 1 }}>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={handleLogout}
-            sx={{
-              borderRadius: 2,
-              mx: 1,
-              my: 1,
-              color: '#f44336',
-              '&:hover': {
-                backgroundColor: 'rgba(244, 67, 54, 0.08)'
-              }
-            }}
-          >
-            <ListItemIcon sx={{ color: '#f44336', minWidth: 40 }}>
-              <LogoutIcon />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Logout"
-              primaryTypographyProps={{ 
-                fontSize: '0.95rem',
-                fontWeight: 500 
-              }}
-            />
-          </ListItemButton>
-        </ListItem>
-      </List>
+      <Box sx={{ p: 2 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          color="error"
+          startIcon={<LogoutIcon />}
+          onClick={handleLogout}
+        >
+          Logout
+        </Button>
+      </Box>
 
       {/* Footer */}
-      <Box sx={{ p: 2, mt: 'auto' }}>
-        <Typography variant="caption" color="text.secondary" align="center" display="block">
+      <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Typography variant="caption" color="text.secondary">
           Daily Report System v1.0
         </Typography>
       </Box>
@@ -311,32 +334,26 @@ const SupervisorDashboard = () => {
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex' }}>
       {/* Mobile App Bar */}
       {isMobile && (
-        <AppBar
-          position="fixed"
-          sx={{
-            width: { sm: `calc(100% - ${drawerWidth}px)` },
-            ml: { sm: `${drawerWidth}px` },
-            display: { sm: 'none' }
-          }}
-        >
+        <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
           <Toolbar>
             <IconButton
               color="inherit"
               aria-label="open drawer"
               edge="start"
               onClick={handleDrawerToggle}
+              sx={{ mr: 2 }}
             >
               <MenuIcon />
             </IconButton>
             <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
               Supervisor Dashboard
             </Typography>
-            <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>
-              Logout
-            </Button>
+            <IconButton color="inherit" onClick={handleLogout}>
+              <LogoutIcon />
+            </IconButton>
           </Toolbar>
         </AppBar>
       )}
@@ -344,7 +361,7 @@ const SupervisorDashboard = () => {
       {/* Sidebar Drawer */}
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
       >
         <Drawer
           variant={isMobile ? 'temporary' : 'permanent'}
@@ -352,12 +369,10 @@ const SupervisorDashboard = () => {
           onClose={handleDrawerToggle}
           ModalProps={{ keepMounted: true }}
           sx={{
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
+            '& .MuiDrawer-paper': { 
+              boxSizing: 'border-box', 
               width: drawerWidth,
-              borderRight: '1px solid #e0e0e0',
-              display: 'flex',
-              flexDirection: 'column'
+              mt: isMobile ? 7 : 0
             },
           }}
         >
@@ -366,21 +381,12 @@ const SupervisorDashboard = () => {
       </Box>
 
       {/* Main Content Area */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          backgroundColor: '#f5f5f5',
-          minHeight: '100vh',
-          pt: { xs: 8, sm: 0 }
-        }}
-      >
+      <Box component="main" sx={{ flexGrow: 1, width: { md: `calc(100% - ${drawerWidth}px)` }, mt: isMobile ? 7 : 0 }}>
         <Routes>
           {supervisorNavigation.map((navItem) => (
             <Route
               key={navItem.path}
-              path={navItem.path.replace('/supervisor', '') || '/'}
+              path={navItem.path.replace('/supervisor', '')}
               element={<navItem.component />}
               exact={navItem.exact}
             />

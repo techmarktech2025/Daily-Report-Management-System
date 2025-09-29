@@ -1,5 +1,6 @@
-// src/Pages/ProjectCreation/components/ScopeOfWorkStage/ScopeOfWorkStage.jsx
-import React, { useState } from 'react';
+// src/Pages/ProjectCreation/components/ScopeOfWorkStage/ScopeOfWorkStageEnhanced.jsx
+import React, { useState, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Box,
   Typography,
@@ -17,7 +18,15 @@ import {
   Grid,
   Card,
   useTheme,
-  useMediaQuery
+  useMediaQuery,
+  Tabs,
+  Tab,
+  LinearProgress,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -25,54 +34,127 @@ import {
   Save as SaveIcon,
   Cancel as CancelIcon,
   Download as DownloadIcon,
-  Delete as DeleteIcon,
-  Add as AddIcon
+  Delete as Delete,
+  Add as AddIcon,
+  CheckCircle as ApproveIcon,
+  Visibility as PreviewIcon,
+  Info as InfoIcon
 } from '@mui/icons-material';
 
-// Sample data matching the Excel format from the image
-const sampleScopeData = [
-  { id: 1, scopeOfWork: 'ALUMINIUM FRAMING', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 2, scopeOfWork: 'GI SHEET', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 3, scopeOfWork: 'MAMBREN', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 4, scopeOfWork: 'ACP SHEET FIXING', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 5, scopeOfWork: 'SILICON', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 6, scopeOfWork: 'PAPER REMOVING', east: 51, west: 28, north: 116, south: 91, total: 286, unit: 'NOS.' },
-  { id: 7, scopeOfWork: 'GLASS REMOVING', east: 0, west: 180, north: 0, south: 0, total: 180, unit: 'NOS.' },
-  { id: 8, scopeOfWork: 'GI TRAY FIXING', east: 180, west: 0, north: 0, south: 0, total: 180, unit: 'NOS.' },
-  { id: 9, scopeOfWork: 'INSULATION FIXING', east: 0, west: 0, north: 0, south: 180, total: 180, unit: 'NOS.' },
-  { id: 10, scopeOfWork: 'GLASS REFIXING', east: 180, west: 0, north: 0, south: 0, total: 180, unit: 'NOS.' },
-  { id: 11, scopeOfWork: 'SILICON FILLING', east: 180, west: 0, north: 0, south: 0, total: 180, unit: 'NOS.' },
-  { id: 12, scopeOfWork: 'CLIP REMOVING', east: 0, west: 180, north: 0, south: 0, total: 180, unit: 'NOS.' }
-];
-
 const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
-  const [scopeData, setScopeData] = useState(data?.length > 0 ? data : []);
+  const [finalScopeData, setFinalScopeData] = useState(data?.length > 0 ? data : []);
+  const [uploadedScopeData, setUploadedScopeData] = useState([]);
+  const [showVirtualTable, setShowVirtualTable] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
   const [uploadStatus, setUploadStatus] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const handleFileUpload = (event) => {
+  // Excel Upload Handler
+  const handleExcelUpload = useCallback((event) => {
     const file = event.target.files[0];
-    if (file) {
-      const fileName = file.name.toLowerCase();
-      if (!fileName.endsWith('.csv') && !fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-        setUploadStatus('Please upload a valid CSV or Excel file');
-        setTimeout(() => setUploadStatus(''), 3000);
-        return;
-      }
+    if (!file) return;
 
-      setUploadStatus('Processing file...');
-      setTimeout(() => {
-        setScopeData(sampleScopeData);
-        setUploadStatus('File uploaded successfully!');
-        setTimeout(() => setUploadStatus(''), 3000);
-      }, 1500);
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.csv') && !fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+      setUploadStatus('❌ Please upload a valid CSV or Excel file');
+      setTimeout(() => setUploadStatus(''), 3000);
+      return;
     }
+
+    setIsUploading(true);
+    setUploadStatus('📊 Processing Excel file...');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        // Process the data - expect columns: SCOPE OF WORK, EAST, WEST, NORTH, SOUTH, UNIT
+        const processedData = jsonData.slice(1).map((row, index) => {
+          if (row.length >= 6 && row[0]) { // Ensure minimum columns and scope name exists
+            const east = Number(row[1]) || 0;
+            const west = Number(row[2]) || 0;
+            const north = Number(row[3]) || 0;
+            const south = Number(row[4]) || 0;
+            const total = east + west + north + south;
+            
+            return {
+              id: Date.now() + index,
+              scopeOfWork: row[0].toString().trim(),
+              east: east,
+              west: west,
+              north: north,
+              south: south,
+              total: total,
+              unit: row[5] ? row[5].toString().trim() : 'NOS.',
+              status: 'pending_review'
+            };
+          }
+          return null;
+        }).filter(Boolean);
+
+        if (processedData.length === 0) {
+          setUploadStatus('❌ No valid scope data found in file. Please check the format.');
+        } else {
+          setUploadedScopeData(processedData);
+          setShowVirtualTable(true);
+          setUploadStatus(`✅ ${processedData.length} scope items loaded successfully! Please review and approve.`);
+        }
+
+      } catch (error) {
+        console.error('Excel processing error:', error);
+        setUploadStatus('❌ Error processing Excel file. Please check the format and try again.');
+      } finally {
+        setIsUploading(false);
+        setTimeout(() => {
+          if (!uploadStatus.includes('❌')) {
+            setUploadStatus('');
+          }
+        }, 5000);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // Reset file input
+  }, [uploadStatus]);
+
+  // Template Download
+  const downloadTemplate = () => {
+    const headers = ['SCOPE OF WORK', 'EAST', 'WEST', 'NORTH', 'SOUTH', 'UNIT'];
+    const sampleRows = [
+      ['ALUMINIUM FRAMING', '51', '28', '116', '91', 'NOS.'],
+      ['GI SHEET', '51', '28', '116', '91', 'NOS.'],
+      ['ACP SHEET FIXING', '51', '28', '116', '91', 'NOS.'],
+      ['GLASS REMOVING', '0', '180', '0', '0', 'NOS.'],
+      ['SILICON SEALING', '51', '28', '116', '91', 'NOS.']
+    ];
+    
+    const csvContent = [
+      headers.join(','),
+      ...sampleRows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'scope_of_work_template.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
+  // Virtual Table Edit Functions
   const handleEdit = (row) => {
     setEditingId(row.id);
     setEditData({ ...row });
@@ -88,8 +170,8 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
     };
     updatedData.total = updatedData.east + updatedData.west + updatedData.north + updatedData.south;
 
-    setScopeData(prev => 
-      prev.map(item => 
+    setUploadedScopeData(prev =>
+      prev.map(item =>
         item.id === editingId ? updatedData : item
       )
     );
@@ -105,18 +187,18 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
   const handleInputChange = (field, value) => {
     setEditData(prev => ({
       ...prev,
-      [field]: field === 'scopeOfWork' || field === 'unit' ? value : value
+      [field]: value
     }));
   };
 
   const handleDeleteRow = (id) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
-      setScopeData(prev => prev.filter(item => item.id !== id));
+    if (window.confirm('Are you sure you want to delete this scope item?')) {
+      setUploadedScopeData(prev => prev.filter(item => item.id !== id));
     }
   };
 
   const handleAddRow = () => {
-    const newId = Math.max(...scopeData.map(item => item.id), 0) + 1;
+    const newId = Date.now();
     const newRow = {
       id: newId,
       scopeOfWork: '',
@@ -125,46 +207,48 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
       north: 0,
       south: 0,
       total: 0,
-      unit: 'NOS.'
+      unit: 'NOS.',
+      status: 'pending_review'
     };
-    setScopeData(prev => [...prev, newRow]);
+    setUploadedScopeData(prev => [...prev, newRow]);
     setEditingId(newId);
     setEditData(newRow);
   };
 
+  // Approve and Add to Final List
+  const handleApproveScope = () => {
+    if (uploadedScopeData.length === 0) return;
+
+    const approvedData = uploadedScopeData.map(item => ({
+      ...item,
+      status: 'approved',
+      approvedAt: new Date().toISOString()
+    }));
+
+    setFinalScopeData(prev => [...prev, ...approvedData]);
+    setUploadedScopeData([]);
+    setShowVirtualTable(false);
+    setUploadStatus(`✅ ${approvedData.length} scope items approved and added to project!`);
+    setTimeout(() => setUploadStatus(''), 3000);
+  };
+
+  // Handle Next
   const handleNext = () => {
-    onComplete(scopeData);
+    if (finalScopeData.length === 0) {
+      setUploadStatus('❌ Please add at least one scope item before proceeding.');
+      setTimeout(() => setUploadStatus(''), 3000);
+      return;
+    }
+    onComplete(finalScopeData);
     onNext();
   };
 
-  const downloadTemplate = () => {
-    const headers = ['SCOPE OF WORK', 'EAST', 'WEST', 'NORTH', 'SOUTH', 'TOTAL', 'UNIT'];
-    const sampleRows = [
-      ['ALUMINIUM FRAMING', '51', '28', '116', '91', '286', 'NOS.'],
-      ['GI SHEET', '51', '28', '116', '91', '286', 'NOS.'],
-      ['GLASS REMOVING', '0', '180', '0', '0', '180', 'NOS.']
-    ];
-    
-    const csvContent = [
-      headers.join(','),
-      ...sampleRows.map(row => row.join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'scope_of_work_template.csv';
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const calculateGrandTotal = () => {
-    return scopeData.reduce((sum, item) => sum + (item.total || 0), 0);
+  const calculateGrandTotal = (data) => {
+    return data.reduce((sum, item) => sum + (item.total || 0), 0);
   };
 
   return (
-    <Paper elevation={3} sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+    <Box>
       <Typography 
         variant="h5" 
         gutterBottom 
@@ -177,96 +261,115 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
         Stage 2: Scope of Work
       </Typography>
 
+      {/* Upload Status */}
+      {uploadStatus && (
+        <Alert 
+          severity={
+            uploadStatus.includes('✅') ? 'success' : 
+            uploadStatus.includes('❌') ? 'error' : 'info'
+          } 
+          sx={{ mb: 3 }}
+        >
+          {uploadStatus}
+        </Alert>
+      )}
+
       {/* Upload Section */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} md={8}>
-          <Card variant="outlined" sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
-              <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                Scope of work:
-              </Typography>
+          <Card sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              📊 Upload Scope of Work
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Upload Excel/CSV file with columns: SCOPE OF WORK, EAST, WEST, NORTH, SOUTH, UNIT
+            </Typography>
+            
+            <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
               <Button
-                variant="contained"
                 component="label"
-                startIcon={<UploadIcon />}
-                sx={{
-                  backgroundColor: '#000',
-                  color: 'white',
-                  '&:hover': { backgroundColor: '#333' },
-                  minWidth: '120px'
-                }}
+                variant="contained"
+                startIcon={isUploading ? <LinearProgress size={20} /> : <UploadIcon />}
+                disabled={isUploading}
+                sx={{ backgroundColor: '#1976d2' }}
               >
-                Upload
+                {isUploading ? 'Processing...' : 'Upload Excel/CSV'}
                 <input
                   type="file"
                   hidden
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileUpload}
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleExcelUpload}
                 />
               </Button>
-            </Box>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-              CSV/XLSX file
-            </Typography>
-            
-            {uploadStatus && (
-              <Alert 
-                severity={uploadStatus.includes('success') ? 'success' : uploadStatus.includes('Please') ? 'error' : 'info'} 
-                sx={{ mt: 2 }}
+
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={downloadTemplate}
               >
-                {uploadStatus}
-              </Alert>
-            )}
+                Download Template
+              </Button>
+            </Box>
+
+            <Typography variant="caption" color="text.secondary">
+              Supported formats: .xlsx, .xls, .csv
+            </Typography>
           </Card>
         </Grid>
 
         <Grid item xs={12} md={4}>
-          <Card variant="outlined" sx={{ p: 3, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" gutterBottom>
-                For view (detail Scope of Work)
-              </Typography>
-              {scopeData.length > 0 && (
-                <Typography variant="body1" color="primary" sx={{ fontWeight: 600 }}>
-                  {scopeData.length} items loaded
+          <Card sx={{ p: 3, backgroundColor: '#f8f9fa', textAlign: 'center', height: '100%' }}>
+            <Typography variant="h6" gutterBottom color="primary">
+              Current Status
+            </Typography>
+            <Typography variant="h3" color="success.main" sx={{ mb: 1 }}>
+              {finalScopeData.length}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Scope Items Added
+            </Typography>
+            {uploadedScopeData.length > 0 && (
+              <>
+                <Typography variant="body2" color="warning.main" sx={{ mt: 2 }}>
+                  {uploadedScopeData.length} items pending review
                 </Typography>
-              )}
-            </Box>
+              </>
+            )}
           </Card>
         </Grid>
       </Grid>
 
-      {/* Template Download */}
-      <Box sx={{ mb: 3, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-        <Typography variant="body1" sx={{ mb: 1, fontWeight: 500 }}>
-          If not having scope Format download:
-        </Typography>
-        <Button
-          variant="text"
-          onClick={downloadTemplate}
-          startIcon={<DownloadIcon />}
-          sx={{ textTransform: 'none', fontWeight: 500 }}
-        >
-          Download Template
-        </Button>
-      </Box>
-
-      {/* Data Table */}
-      {scopeData.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      {/* Virtual Table for Review */}
+      {showVirtualTable && uploadedScopeData.length > 0 && (
+        <Paper sx={{ p: 3, mb: 4, backgroundColor: '#fff3e0' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Typography variant="h6">
-              Scope of Work Items ({scopeData.length})
+              📋 Review Uploaded Data ({uploadedScopeData.length} items)
             </Typography>
-            <Button
-              variant="outlined"
-              startIcon={<AddIcon />}
-              onClick={handleAddRow}
-              size="small"
-            >
-              Add Item
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={handleAddRow}
+                size="small"
+              >
+                Add Row
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<ApproveIcon />}
+                onClick={handleApproveScope}
+                color="success"
+                disabled={uploadedScopeData.length === 0}
+              >
+                Approve All ({uploadedScopeData.length})
+              </Button>
+            </Box>
           </Box>
+
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            <strong>Please review the data carefully.</strong> You can edit any field by clicking the edit icon. Click "Approve All" to add these items to your project.
+          </Alert>
 
           <TableContainer 
             component={Paper} 
@@ -281,38 +384,22 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
             <Table stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 200 }}>
-                    SCOPE OF WORK
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    EAST
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    WEST
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    NORTH
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    SOUTH
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    TOTAL
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 80 }}>
-                    UNIT
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white', minWidth: 120 }}>
-                    ACTIONS
-                  </TableCell>
+                  <TableCell><strong>SCOPE OF WORK</strong></TableCell>
+                  <TableCell align="center"><strong>EAST</strong></TableCell>
+                  <TableCell align="center"><strong>WEST</strong></TableCell>
+                  <TableCell align="center"><strong>NORTH</strong></TableCell>
+                  <TableCell align="center"><strong>SOUTH</strong></TableCell>
+                  <TableCell align="center"><strong>TOTAL</strong></TableCell>
+                  <TableCell align="center"><strong>UNIT</strong></TableCell>
+                  <TableCell align="center"><strong>ACTIONS</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {scopeData.map((row, index) => (
+                {uploadedScopeData.map((row, index) => (
                   <TableRow 
                     key={row.id}
                     sx={{ 
-                      backgroundColor: index % 2 === 0 ? 'white' : '#f9f9f9',
+                      backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
                       '&:hover': { backgroundColor: '#f0f0f0' }
                     }}
                   >
@@ -323,86 +410,43 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
                           fullWidth
                           value={editData.scopeOfWork || ''}
                           onChange={(e) => handleInputChange('scopeOfWork', e.target.value)}
-                          sx={{ minWidth: 180 }}
+                          sx={{ minWidth: 200 }}
                         />
                       ) : (
-                        <Typography sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {row.scopeOfWork}
                         </Typography>
                       )}
                     </TableCell>
+
+                    {['east', 'west', 'north', 'south'].map(direction => (
+                      <TableCell align="center" key={direction}>
+                        {editingId === row.id ? (
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={editData[direction] || 0}
+                            onChange={(e) => handleInputChange(direction, e.target.value)}
+                            sx={{ width: 70 }}
+                            inputProps={{ min: 0 }}
+                          />
+                        ) : (
+                          <Typography variant="body2" sx={{ fontWeight: row[direction] > 0 ? 600 : 400 }}>
+                            {row[direction] || '-'}
+                          </Typography>
+                        )}
+                      </TableCell>
+                    ))}
+
                     <TableCell align="center">
-                      {editingId === row.id ? (
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={editData.east || 0}
-                          onChange={(e) => handleInputChange('east', e.target.value)}
-                          sx={{ width: 70 }}
-                        />
-                      ) : (
-                        <Typography sx={{ fontWeight: row.east > 0 ? 600 : 400 }}>
-                          {row.east || '-'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      {editingId === row.id ? (
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={editData.west || 0}
-                          onChange={(e) => handleInputChange('west', e.target.value)}
-                          sx={{ width: 70 }}
-                        />
-                      ) : (
-                        <Typography sx={{ fontWeight: row.west > 0 ? 600 : 400 }}>
-                          {row.west || '-'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      {editingId === row.id ? (
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={editData.north || 0}
-                          onChange={(e) => handleInputChange('north', e.target.value)}
-                          sx={{ width: 70 }}
-                        />
-                      ) : (
-                        <Typography sx={{ fontWeight: row.north > 0 ? 600 : 400 }}>
-                          {row.north || '-'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      {editingId === row.id ? (
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={editData.south || 0}
-                          onChange={(e) => handleInputChange('south', e.target.value)}
-                          sx={{ width: 70 }}
-                        />
-                      ) : (
-                        <Typography sx={{ fontWeight: row.south > 0 ? 600 : 400 }}>
-                          {row.south || '-'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Typography sx={{ 
-                        fontWeight: 600, 
-                        color: 'primary.main',
-                        fontSize: '0.9rem'
-                      }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
                         {editingId === row.id 
                           ? (Number(editData.east) || 0) + (Number(editData.west) || 0) + (Number(editData.north) || 0) + (Number(editData.south) || 0)
                           : row.total
                         }
                       </Typography>
                     </TableCell>
+
                     <TableCell align="center">
                       {editingId === row.id ? (
                         <TextField
@@ -412,99 +456,183 @@ const ScopeOfWorkStage = ({ data, onComplete, onNext, onBack }) => {
                           sx={{ width: 70 }}
                         />
                       ) : (
-                        <Typography sx={{ fontSize: '0.875rem', color: 'text.secondary' }}>
+                        <Typography variant="body2">
                           {row.unit}
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell align="center">
                       {editingId === row.id ? (
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                          <IconButton size="small" onClick={handleSaveEdit} color="primary">
-                            <SaveIcon fontSize="small" />
+                          <IconButton onClick={handleSaveEdit} color="success" size="small">
+                            <SaveIcon />
                           </IconButton>
-                          <IconButton size="small" onClick={handleCancelEdit}>
-                            <CancelIcon fontSize="small" />
+                          <IconButton onClick={handleCancelEdit} color="error" size="small">
+                            <CancelIcon />
                           </IconButton>
                         </Box>
                       ) : (
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                          <IconButton size="small" onClick={() => handleEdit(row)} color="primary">
-                            <EditIcon fontSize="small" />
+                          <IconButton onClick={() => handleEdit(row)} color="primary" size="small">
+                            <EditIcon />
                           </IconButton>
-                          <IconButton size="small" onClick={() => handleDeleteRow(row.id)} color="error">
-                            <DeleteIcon fontSize="small" />
+                          <IconButton onClick={() => handleDeleteRow(row.id)} color="error" size="small">
+                            <Delete />
                           </IconButton>
                         </Box>
                       )}
                     </TableCell>
                   </TableRow>
                 ))}
-                
+
                 {/* Grand Total Row */}
-                <TableRow sx={{ backgroundColor: '#e3f2fd' }}>
-                  <TableCell sx={{ fontWeight: 600, fontSize: '1rem' }}>
-                    GRAND TOTAL
+                <TableRow sx={{ backgroundColor: '#e3f2fd', fontWeight: 'bold' }}>
+                  <TableCell><strong>GRAND TOTAL</strong></TableCell>
+                  <TableCell align="center">
+                    <strong>{uploadedScopeData.reduce((sum, item) => sum + (Number(item.east) || 0), 0)}</strong>
                   </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    {scopeData.reduce((sum, item) => sum + (Number(item.east) || 0), 0)}
+                  <TableCell align="center">
+                    <strong>{uploadedScopeData.reduce((sum, item) => sum + (Number(item.west) || 0), 0)}</strong>
                   </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    {scopeData.reduce((sum, item) => sum + (Number(item.west) || 0), 0)}
+                  <TableCell align="center">
+                    <strong>{uploadedScopeData.reduce((sum, item) => sum + (Number(item.north) || 0), 0)}</strong>
                   </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    {scopeData.reduce((sum, item) => sum + (Number(item.north) || 0), 0)}
+                  <TableCell align="center">
+                    <strong>{uploadedScopeData.reduce((sum, item) => sum + (Number(item.south) || 0), 0)}</strong>
                   </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    {scopeData.reduce((sum, item) => sum + (Number(item.south) || 0), 0)}
+                  <TableCell align="center">
+                    <strong>{calculateGrandTotal(uploadedScopeData)}</strong>
                   </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, color: 'primary.main', fontSize: '1.1rem' }}>
-                    {calculateGrandTotal()}
-                  </TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    NOS.
-                  </TableCell>
+                  <TableCell align="center"><strong>NOS.</strong></TableCell>
                   <TableCell></TableCell>
                 </TableRow>
               </TableBody>
             </Table>
           </TableContainer>
-        </Box>
+        </Paper>
+      )}
+
+      {/* Final Approved Scope Items */}
+      {finalScopeData.length > 0 && (
+        <Paper sx={{ p: 3, mb: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h6">
+              ✅ Approved Scope Items ({finalScopeData.length})
+            </Typography>
+            <Button
+              variant="outlined"
+              startIcon={<PreviewIcon />}
+              onClick={() => setShowPreviewDialog(true)}
+            >
+              Preview Final List
+            </Button>
+          </Box>
+
+          <Alert severity="success" sx={{ mb: 2 }}>
+            <strong>{finalScopeData.length} scope items</strong> have been approved and will be included in the project. 
+            Grand Total: <strong>{calculateGrandTotal(finalScopeData)} items</strong>
+          </Alert>
+
+          {/* Summary Cards */}
+          <Grid container spacing={2}>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color="primary">
+                  {finalScopeData.reduce((sum, item) => sum + (Number(item.east) || 0), 0)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">East Total</Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color="info.main">
+                  {finalScopeData.reduce((sum, item) => sum + (Number(item.west) || 0), 0)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">West Total</Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color="warning.main">
+                  {finalScopeData.reduce((sum, item) => sum + (Number(item.north) || 0), 0)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">North Total</Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color="success.main">
+                  {finalScopeData.reduce((sum, item) => sum + (Number(item.south) || 0), 0)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">South Total</Typography>
+              </Card>
+            </Grid>
+          </Grid>
+        </Paper>
       )}
 
       {/* Navigation Buttons */}
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        flexDirection: { xs: 'column', sm: 'row' }, 
-        gap: 2,
-        mt: 4
-      }}>
-        <Button
-          variant="outlined"
-          onClick={onBack}
-          sx={{
-            minHeight: { xs: '48px', sm: '56px' },
-            px: { xs: 3, sm: 4 },
-            order: { xs: 2, sm: 1 }
-          }}
-        >
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          flexDirection: { xs: 'column', sm: 'row' }, 
+          gap: 2,
+          mt: 4 
+        }}
+      >
+        <Button onClick={onBack} variant="outlined">
           Back
         </Button>
-        <Button
-          variant="contained"
+        <Button 
           onClick={handleNext}
-          disabled={scopeData.length === 0}
-          sx={{
-            minHeight: { xs: '48px', sm: '56px' },
-            px: { xs: 3, sm: 4 },
-            order: { xs: 1, sm: 2 }
-          }}
+          variant="contained"
+          disabled={finalScopeData.length === 0}
+          sx={{ minWidth: 200 }}
         >
-          Next: Add Manpower
+          Next: Materials & Tools ({finalScopeData.length} items)
         </Button>
       </Box>
-    </Paper>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreviewDialog} onClose={() => setShowPreviewDialog(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Final Scope of Work Preview</DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Scope of Work</strong></TableCell>
+                  <TableCell align="center"><strong>East</strong></TableCell>
+                  <TableCell align="center"><strong>West</strong></TableCell>
+                  <TableCell align="center"><strong>North</strong></TableCell>
+                  <TableCell align="center"><strong>South</strong></TableCell>
+                  <TableCell align="center"><strong>Total</strong></TableCell>
+                  <TableCell><strong>Unit</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {finalScopeData.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{item.scopeOfWork}</TableCell>
+                    <TableCell align="center">{item.east || 0}</TableCell>
+                    <TableCell align="center">{item.west || 0}</TableCell>
+                    <TableCell align="center">{item.north || 0}</TableCell>
+                    <TableCell align="center">{item.south || 0}</TableCell>
+                    <TableCell align="center"><strong>{item.total}</strong></TableCell>
+                    <TableCell>{item.unit}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowPreviewDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 };
 

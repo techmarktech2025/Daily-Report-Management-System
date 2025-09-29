@@ -1,4 +1,4 @@
-// src/App.js
+// src/App.js - Updated with ProjectContext integration
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
@@ -6,6 +6,7 @@ import { CssBaseline, CircularProgress, Box } from '@mui/material';
 
 // Import contexts
 import { AuthProvider } from './contexts/AuthContext';
+import { ProjectProvider } from './contexts/ProjectContext';
 
 // Import components
 import Login from './Pages/Auth/Login';
@@ -28,7 +29,12 @@ const theme = createTheme({
 
 // Loading component
 const LoadingFallback = () => (
-  <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+  <Box
+    display="flex"
+    justifyContent="center"
+    alignItems="center"
+    minHeight="100vh"
+  >
     <CircularProgress />
   </Box>
 );
@@ -38,44 +44,52 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <Router>
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              {/* Public Login Route */}
-              <Route path="/login" element={<Login />} />
+        <ProjectProvider>
+          <Router>
+            <Suspense fallback={<LoadingFallback />}>
+              <Routes>
+                {/* Public Login Route */}
+                <Route path="/login" element={<Login />} />
 
-              {/* Admin Routes */}
-              <Route path="/admin/*" element={
-                <ProtectedRoute requiredRole="admin">
-                  <Layout>
-                    <Routes>
-                      {getFlatRoutes().map((route) => (
-                        <Route
-                          key={route.path}
-                          path={route.path.replace('/admin', '') || '/'}
-                          element={<route.component />}
-                        />
-                      ))}
-                    </Routes>
-                  </Layout>
-                </ProtectedRoute>
-              } />
+                {/* Admin Routes */}
+                <Route
+                  path="/admin/*"
+                  element={
+                    <ProtectedRoute requiredRole="admin">
+                      <Layout>
+                        <Routes>
+                          {getFlatRoutes().map((route) => (
+                            <Route
+                              key={route.path}
+                              path={route.path.replace('/admin', '')}
+                              element={<route.component />}
+                            />
+                          ))}
+                        </Routes>
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
 
-              {/* Supervisor Routes */}
-              <Route path="/supervisor/*" element={
-                <ProtectedRoute requiredRole="supervisor">
-                  <SupervisorDashboard />
-                </ProtectedRoute>
-              } />
+                {/* Supervisor Routes - Updated to use new dashboard */}
+                <Route
+                  path="/supervisor/*"
+                  element={
+                    <ProtectedRoute requiredRole="supervisor">
+                      <SupervisorDashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
-              {/* Default redirect to login */}
-              <Route path="/" element={<Navigate to="/login" replace />} />
+                {/* Default redirect to login */}
+                <Route path="/" element={<Navigate to="/login" replace />} />
 
-              {/* Fallback route */}
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-          </Suspense>
-        </Router>
+                {/* Fallback route */}
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </Suspense>
+          </Router>
+        </ProjectProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -1,4 +1,4 @@
-// src/Pages/Supervisor/ScopeOfWork/ScopeOfWork.jsx
+// src/Pages/Supervisor/ScopeOfWork/ScopeOfWorkUpdated.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Container,
@@ -35,10 +35,14 @@ import {
   Warning as WarningIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useProject } from '../../../contexts/ProjectContext';
 
 const ScopeOfWork = () => {
   const { user } = useAuth();
+  const { getProjectBySupervisor, updateScopeProgress, needsConfirmation } = useProject();
+  
   const [scopeData, setScopeData] = useState([]);
+  const [project, setProject] = useState(null);
   const [editingRow, setEditingRow] = useState(null);
   const [editingData, setEditingData] = useState({ instock: '', done: '', remarks: '' });
   const [loading, setLoading] = useState(true);
@@ -46,90 +50,33 @@ const ScopeOfWork = () => {
   const [validationError, setValidationError] = useState('');
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-
-  // Mock scope of work data
-  const mockScopeData = [
-    {
-      id: 1,
-      scopeOfWork: 'ALUMINIUM FRAMING',
-      east: 51,
-      west: 28,
-      north: 116,
-      south: 91,
-      total: 286,
-      unit: 'NOS.',
-      instock: 50,
-      done: 20,
-      remarks: 'Work in progress on east side'
-    },
-    {
-      id: 2,
-      scopeOfWork: 'GI SHEET',
-      east: 51,
-      west: 28,
-      north: 116,
-      south: 91,
-      total: 286,
-      unit: 'NOS.',
-      instock: 80,
-      done: 45,
-      remarks: 'Good quality material received'
-    },
-    {
-      id: 3,
-      scopeOfWork: 'MAMBREN',
-      east: 51,
-      west: 28,
-      north: 116,
-      south: 91,
-      total: 286,
-      unit: 'NOS.',
-      instock: 286,
-      done: 10,
-      remarks: 'All material received'
-    },
-    {
-      id: 4,
-      scopeOfWork: 'ACP SHEET FIXING',
-      east: 51,
-      west: 28,
-      north: 116,
-      south: 91,
-      total: 286,
-      unit: 'NOS.',
-      instock: 60,
-      done: 35,
-      remarks: 'Fixed on north and east walls'
-    },
-    {
-      id: 5,
-      scopeOfWork: 'GLASS REMOVING',
-      east: 0,
-      west: 180,
-      north: 0,
-      south: 0,
-      total: 180,
-      unit: 'NOS.',
-      instock: 0,
-      done: 0,
-      remarks: 'No material received yet'
-    }
-  ];
+  const [authorizationStatus, setAuthorizationStatus] = useState('checking');
 
   useEffect(() => {
-    loadScopeData();
-  }, []);
+    loadProjectData();
+  }, [user]);
 
-  const loadScopeData = async () => {
-    setLoading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setScopeData(mockScopeData);
-    } catch (error) {
-      console.error('Error loading scope data:', error);
-    } finally {
-      setLoading(false);
+  const loadProjectData = async () => {
+    if (user && user.employeeId) {
+      const userProject = getProjectBySupervisor(user.employeeId);
+      
+      if (userProject) {
+        setProject(userProject);
+        
+        // Check if supervisor needs confirmation
+        const needsAuth = needsConfirmation(userProject.id, user.employeeId);
+        if (needsAuth) {
+          setAuthorizationStatus('needs_confirmation');
+        } else {
+          setAuthorizationStatus('authorized');
+          // Load scope data from project
+          setScopeData(userProject.scopeOfWork || []);
+        }
+      } else {
+        setAuthorizationStatus('no_project');
+      }
     }
+    setLoading(false);
   };
 
   // Calculate balance: Total - Instock (material logistics)
@@ -145,9 +92,9 @@ const ScopeOfWork = () => {
     return scopeData.map(item => {
       if (editingRow === item.id) {
         // Use editing values for real-time calculations
-        const currentInstock = editingData.instock !== '' ? parseInt(editingData.instock) || 0 : item.instock;
-        const currentDone = editingData.done !== '' ? parseInt(editingData.done) || 0 : item.done;
-        const currentRemarks = editingData.remarks !== '' ? editingData.remarks : item.remarks;
+        const currentInstock = editingData.instock !== '' ? parseInt(editingData.instock) || 0 : item.instock || 0;
+        const currentDone = editingData.done !== '' ? parseInt(editingData.done) || 0 : item.done || 0;
+        const currentRemarks = editingData.remarks !== '' ? editingData.remarks : item.remarks || '';
         
         return {
           ...item,
@@ -162,7 +109,10 @@ const ScopeOfWork = () => {
       // Use saved values
       return {
         ...item,
-        balance: calculateBalance(item.total, item.instock),
+        instock: item.instock || 0,
+        done: item.done || 0,
+        balance: calculateBalance(item.total, item.instock || 0),
+        remarks: item.remarks || '',
         isEditing: false
       };
     });
@@ -183,8 +133,8 @@ const ScopeOfWork = () => {
   const handleEdit = (row) => {
     setEditingRow(row.id);
     setEditingData({
-      instock: row.instock.toString(),
-      done: row.done.toString(),
+      instock: (row.instock || 0).toString(),
+      done: (row.done || 0).toString(),
       remarks: row.remarks || ''
     });
     setValidationError('');
@@ -264,8 +214,8 @@ const ScopeOfWork = () => {
       // Mock API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Update the data
-      setScopeData(prev => prev.map(item => {
+      // Update the local scope data
+      const updatedScope = scopeData.map(item => {
         if (item.id === editingRow) {
           return {
             ...item,
@@ -276,7 +226,20 @@ const ScopeOfWork = () => {
           };
         }
         return item;
-      }));
+      });
+
+      setScopeData(updatedScope);
+
+      // Update the project context with the changes
+      const scopeUpdate = [{
+        id: editingRow,
+        instock: newInstock,
+        done: newDone,
+        remarks: editingData.remarks || '',
+        lastUpdated: new Date().toISOString()
+      }];
+
+      updateScopeProgress(project.id, scopeUpdate);
       
       // Reset editing state
       setEditingRow(null);
@@ -308,34 +271,67 @@ const ScopeOfWork = () => {
     setShowDetailsDialog(true);
   };
 
-  if (loading) {
+  // Handle unauthorized access
+  if (authorizationStatus === 'checking' || loading) {
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <LinearProgress sx={{ width: '50%' }} />
-        </Box>
+      <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+        <Typography>Loading scope of work...</Typography>
+      </Container>
+    );
+  }
+
+  if (authorizationStatus === 'needs_confirmation') {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Typography variant="h6">Authorization Required</Typography>
+          <Typography>
+            You need to complete the supervisor confirmation process before accessing scope of work.
+            Please complete the project review and confirmation steps.
+          </Typography>
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (authorizationStatus === 'no_project') {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert severity="error">
+          No project found for your supervisor ID. Please contact admin.
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (!scopeData || scopeData.length === 0) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert severity="info">
+          No scope of work has been defined for this project yet. Please contact your project administrator.
+        </Alert>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="xl" sx={{ mt: 2, pb: 4 }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 600, color: '#1976d2', mb: 1 }}>
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h4" gutterBottom>
           Scope of Work
         </Typography>
-        <Typography variant="h6" color="text.secondary">
-          Project: {user?.assignedProjects?.[0]?.name || 'Current Project'}
+        <Typography variant="subtitle1" color="text.secondary">
+          Project: {project?.projectName || 'Current Project'}
         </Typography>
-      </Box>
+      </Paper>
 
       {/* Summary Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card elevation={3}>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={6} sm={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="h4" color="primary">
                 {summary.totalItems}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -344,11 +340,10 @@ const ScopeOfWork = () => {
             </CardContent>
           </Card>
         </Grid>
-        
-        <Grid item xs={12} sm={6} md={3}>
-          <Card elevation={3}>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: 'info.main' }}>
+        <Grid item xs={6} sm={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="h4" color="info.main">
                 {summary.totalInstock}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -357,11 +352,10 @@ const ScopeOfWork = () => {
             </CardContent>
           </Card>
         </Grid>
-        
-        <Grid item xs={12} sm={6} md={3}>
-          <Card elevation={3}>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: 'success.main' }}>
+        <Grid item xs={6} sm={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="h4" color="success.main">
                 {summary.totalDone}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -370,11 +364,10 @@ const ScopeOfWork = () => {
             </CardContent>
           </Card>
         </Grid>
-        
-        <Grid item xs={12} sm={6} md={3}>
-          <Card elevation={3}>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: 'warning.main' }}>
+        <Grid item xs={6} sm={3}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="h4" color="warning.main">
                 {summary.totalBalance}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -386,30 +379,22 @@ const ScopeOfWork = () => {
       </Grid>
 
       {/* Overall Progress */}
-      <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <ProgressIcon sx={{ mr: 1, color: 'primary.main' }} />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Work Progress: {overallProgress.toFixed(1)}%
-          </Typography>
-        </Box>
-        <LinearProgress
-          variant="determinate"
-          value={overallProgress}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          <ProgressIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+          Work Progress: {overallProgress.toFixed(1)}%
+        </Typography>
+        <LinearProgress 
+          variant="determinate" 
+          value={overallProgress} 
           color={getProgressColor(overallProgress)}
-          sx={{ height: 8, borderRadius: 4 }}
+          sx={{ height: 10, borderRadius: 2 }}
         />
       </Paper>
 
       {/* Status Messages */}
       {saveStatus && (
-        <Alert 
-          severity={
-            saveStatus.includes('✅') ? 'success' : 
-            saveStatus.includes('💾') ? 'info' : 'error'
-          }
-          sx={{ mb: 3 }}
-        >
+        <Alert severity={saveStatus.includes('✅') ? 'success' : 'error'} sx={{ mb: 3 }}>
           {saveStatus}
         </Alert>
       )}
@@ -421,290 +406,216 @@ const ScopeOfWork = () => {
       )}
 
       {/* Logic Explanation */}
-      <Paper elevation={2} sx={{ p: 3, mb: 4, backgroundColor: '#e8f4f8' }}>
-        <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: '#1976d2' }}>
+      <Alert severity="info" sx={{ mb: 3 }}>
+        <Typography variant="subtitle2" gutterBottom>
           📋 How It Works
         </Typography>
         <Grid container spacing={2}>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={6} sm={3}>
             <Typography variant="body2">
               <strong>Instock:</strong> Materials received at site
             </Typography>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={6} sm={3}>
             <Typography variant="body2">
               <strong>Done:</strong> Work completed (≤ Instock)
             </Typography>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={6} sm={3}>
             <Typography variant="body2">
               <strong>Balance:</strong> Total - Instock (yet to send)
             </Typography>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={6} sm={3}>
             <Typography variant="body2">
               <strong>Available:</strong> Instock - Done (can be used)
             </Typography>
           </Grid>
         </Grid>
-      </Paper>
+      </Alert>
 
       {/* Scope of Work Table */}
-      <Paper elevation={3}>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  SCOPE OF WORK
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  EAST
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  WEST
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  NORTH
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  SOUTH
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  TOTAL
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  UNIT
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#4caf50', color: 'white' }}>
-                  BALANCE
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#2196f3', color: 'white' }}>
-                  INSTOCK ✏️
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#ff9800', color: 'white' }}>
-                  DONE ✏️
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#9c27b0', color: 'white' }}>
-                  REMARKS
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: '#1976d2', color: 'white' }}>
-                  ACTIONS
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {getDisplayValues.map((row, index) => {
-                const isEditing = editingRow === row.id;
-                const progress = getProgressPercentage(row.done, row.total);
-                const hasValidationError = isEditing && parseInt(editingData.done || 0) > parseInt(editingData.instock || 0);
-                const available = row.instock - row.done;
-                
-                return (
-                  <TableRow 
-                    key={row.id}
-                    sx={{ 
-                      backgroundColor: index % 2 === 0 ? '#f8f9fa' : 'white',
-                      '&:hover': { backgroundColor: '#e3f2fd' },
-                      ...(isEditing && { backgroundColor: '#fff3e0' }),
-                      ...(hasValidationError && { backgroundColor: '#ffebee' })
-                    }}
-                  >
-                    <TableCell>
-                      <Typography sx={{ fontWeight: 600 }}>{row.scopeOfWork}</Typography>
-                    </TableCell>
-                    <TableCell align="center">{row.east || '-'}</TableCell>
-                    <TableCell align="center">{row.west || '-'}</TableCell>
-                    <TableCell align="center">{row.north || '-'}</TableCell>
-                    <TableCell align="center">{row.south || '-'}</TableCell>
-                    <TableCell align="center">
-                      <Typography sx={{ fontWeight: 600, color: 'primary.main' }}>
-                        {row.total}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="center">{row.unit}</TableCell>
-                    
-                    {/* Balance - Total - Instock */}
-                    <TableCell align="center">
-                      <Chip 
-                        label={row.balance}
-                        color={row.balance === 0 ? 'success' : 'warning'}
-                        sx={{ 
-                          fontWeight: 600, 
-                          minWidth: 60,
-                          ...(isEditing && {
-                            backgroundColor: '#ffeb3b',
-                            color: '#000',
-                            fontWeight: 700
-                          })
-                        }}
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell><strong>SCOPE OF WORK</strong></TableCell>
+              <TableCell align="center"><strong>EAST</strong></TableCell>
+              <TableCell align="center"><strong>WEST</strong></TableCell>
+              <TableCell align="center"><strong>NORTH</strong></TableCell>
+              <TableCell align="center"><strong>SOUTH</strong></TableCell>
+              <TableCell align="center"><strong>TOTAL</strong></TableCell>
+              <TableCell align="center"><strong>UNIT</strong></TableCell>
+              <TableCell align="center"><strong>BALANCE</strong></TableCell>
+              <TableCell align="center"><strong>INSTOCK ✏️</strong></TableCell>
+              <TableCell align="center"><strong>DONE ✏️</strong></TableCell>
+              <TableCell><strong>REMARKS</strong></TableCell>
+              <TableCell align="center"><strong>ACTIONS</strong></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {getDisplayValues.map((row, index) => {
+              const isEditing = editingRow === row.id;
+              const progress = getProgressPercentage(row.done, row.total);
+              const hasValidationError = isEditing && parseInt(editingData.done || 0) > parseInt(editingData.instock || 0);
+              const available = row.instock - row.done;
+              
+              return (
+                <TableRow key={row.id}>
+                  <TableCell>{row.scopeOfWork}</TableCell>
+                  <TableCell align="center">{row.east || '-'}</TableCell>
+                  <TableCell align="center">{row.west || '-'}</TableCell>
+                  <TableCell align="center">{row.north || '-'}</TableCell>
+                  <TableCell align="center">{row.south || '-'}</TableCell>
+                  <TableCell align="center">
+                    <strong>{row.total}</strong>
+                  </TableCell>
+                  <TableCell align="center">{row.unit}</TableCell>
+                  {/* Balance - Total - Instock */}
+                  <TableCell align="center">
+                    <Chip 
+                      label={row.balance} 
+                      color="warning" 
+                      size="small"
+                    />
+                  </TableCell>
+                  {/* Instock - Editable by supervisor */}
+                  <TableCell align="center">
+                    {isEditing ? (
+                      <TextField
+                        type="number"
+                        value={editingData.instock}
+                        onChange={handleInstockChange}
+                        size="small"
+                        sx={{ width: 80 }}
                       />
-                    </TableCell>
-                    
-                    {/* Instock - Editable by supervisor */}
-                    <TableCell align="center">
-                      {isEditing ? (
+                    ) : (
+                      <strong>{row.instock}</strong>
+                    )}
+                  </TableCell>
+                  {/* Done - Editable by supervisor */}
+                  <TableCell align="center">
+                    {isEditing ? (
+                      <Box>
                         <TextField
                           type="number"
-                          value={editingData.instock}
-                          onChange={handleInstockChange}
+                          value={editingData.done}
+                          onChange={handleDoneChange}
+                          error={hasValidationError}
                           size="small"
-                          inputProps={{ 
-                            min: 0, 
-                            max: row.total,
-                            step: 1
-                          }}
                           sx={{ width: 80 }}
                         />
-                      ) : (
-                        <Chip 
-                          label={row.instock}
-                          color="info"
-                          sx={{ fontWeight: 600, minWidth: 60 }}
-                        />
-                      )}
-                    </TableCell>
-                    
-                    {/* Done - Editable by supervisor */}
-                    <TableCell align="center">
-                      {isEditing ? (
-                        <Box>
-                          <TextField
-                            type="number"
-                            value={editingData.done}
-                            onChange={handleDoneChange}
-                            size="small"
-                            inputProps={{ 
-                              min: 0, 
-                              step: 1
-                            }}
-                            sx={{ 
-                              width: 80,
-                              mb: 1,
-                              ...(hasValidationError && {
-                                '& .MuiOutlinedInput-root': {
-                                  '& fieldset': { borderColor: 'error.main' }
-                                }
-                              })
-                            }}
-                            error={hasValidationError}
-                          />
-                          <Typography variant="caption" display="block" color="text.secondary">
-                            Max: {editingData.instock || row.instock}
-                          </Typography>
-                        </Box>
-                      ) : (
-                        <Box>
-                          <Chip 
-                            label={row.done}
-                            color="success"
-                            sx={{ fontWeight: 600, minWidth: 60, mb: 0.5 }}
-                          />
-                          <LinearProgress 
-                            variant="determinate" 
-                            value={progress}
-                            color={getProgressColor(progress)}
-                            sx={{ height: 4, borderRadius: 2, mb: 0.5 }}
-                          />
-                          <Typography variant="caption" display="block" color="text.secondary">
-                            Available: {available}
-                          </Typography>
-                        </Box>
-                      )}
-                    </TableCell>
-                    
-                    {/* Remarks */}
-                    <TableCell sx={{ minWidth: 200 }}>
-                      {isEditing ? (
-                        <TextField
-                          value={editingData.remarks}
-                          onChange={handleRemarksChange}
-                          size="small"
-                          multiline
-                          rows={2}
-                          fullWidth
-                          placeholder="Add remarks..."
-                        />
-                      ) : (
-                        <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
-                          {row.remarks || 'No remarks'}
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Max: {editingData.instock || row.instock}
                         </Typography>
-                      )}
-                    </TableCell>
-                    
-                    {/* Actions */}
-                    <TableCell align="center">
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        {isEditing ? (
-                          <>
-                            <IconButton 
-                              size="small" 
-                              onClick={handleSave} 
-                              color="success"
-                              disabled={hasValidationError}
-                            >
-                              <SaveIcon />
-                            </IconButton>
-                            <IconButton size="small" onClick={handleCancel}>
-                              <CancelIcon />
-                            </IconButton>
-                          </>
-                        ) : (
-                          <>
-                            <IconButton size="small" onClick={() => handleEdit(row)} color="primary">
-                              <EditIcon />
-                            </IconButton>
-                            <IconButton size="small" onClick={() => showItemDetails(row)} color="info">
-                              <ViewIcon />
-                            </IconButton>
-                          </>
-                        )}
                       </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+                    ) : (
+                      <Box>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={progress}
+                          color={getProgressColor(progress)}
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="body2">
+                          <strong>{row.done}</strong>
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Available: {available}
+                        </Typography>
+                      </Box>
+                    )}
+                  </TableCell>
+                  {/* Remarks */}
+                  <TableCell>
+                    {isEditing ? (
+                      <TextField
+                        multiline
+                        rows={2}
+                        value={editingData.remarks}
+                        onChange={handleRemarksChange}
+                        size="small"
+                        sx={{ width: 200 }}
+                      />
+                    ) : (
+                      <Typography variant="body2">
+                        {row.remarks || 'No remarks'}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  {/* Actions */}
+                  <TableCell align="center">
+                    {isEditing ? (
+                      <>
+                        <IconButton onClick={handleSave} color="primary">
+                          <SaveIcon />
+                        </IconButton>
+                        <IconButton onClick={handleCancel} color="secondary">
+                          <CancelIcon />
+                        </IconButton>
+                      </>
+                    ) : (
+                      <>
+                        <IconButton onClick={() => handleEdit(row)} color="primary">
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton onClick={() => showItemDetails(row)} color="info">
+                          <ViewIcon />
+                        </IconButton>
+                      </>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* Item Details Dialog */}
       <Dialog open={showDetailsDialog} onClose={() => setShowDetailsDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <ScopeIcon sx={{ mr: 2 }} />
-            {selectedItem?.scopeOfWork} - Details
-          </Box>
+          <ScopeIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+          {selectedItem?.scopeOfWork} - Details
         </DialogTitle>
         <DialogContent>
           {selectedItem && (
             <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <Typography variant="body2"><strong>Total Required:</strong> {selectedItem.total} {selectedItem.unit}</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Total Required:</strong> {selectedItem.total} {selectedItem.unit}
+                </Typography>
               </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2"><strong>Work Progress:</strong> {getProgressPercentage(selectedItem.done, selectedItem.total).toFixed(1)}%</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Work Progress:</strong> {getProgressPercentage(selectedItem.done, selectedItem.total).toFixed(1)}%
+                </Typography>
               </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2"><strong>Received (Instock):</strong> {selectedItem.instock} {selectedItem.unit}</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Received (Instock):</strong> {selectedItem.instock} {selectedItem.unit}
+                </Typography>
               </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2"><strong>Work Done:</strong> {selectedItem.done} {selectedItem.unit}</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Work Done:</strong> {selectedItem.done} {selectedItem.unit}
+                </Typography>
               </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2" color="warning.main"><strong>Yet to Send:</strong> {selectedItem.balance} {selectedItem.unit}</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Yet to Send:</strong> {selectedItem.balance} {selectedItem.unit}
+                </Typography>
               </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2" color="success.main"><strong>Available to Use:</strong> {selectedItem.instock - selectedItem.done} {selectedItem.unit}</Typography>
+              <Grid item xs={12}>
+                <Typography variant="body1">
+                  <strong>Available to Use:</strong> {selectedItem.instock - selectedItem.done} {selectedItem.unit}
+                </Typography>
               </Grid>
             </Grid>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowDetailsDialog(false)} variant="contained">
-            Close
-          </Button>
+          <Button onClick={() => setShowDetailsDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Container>
