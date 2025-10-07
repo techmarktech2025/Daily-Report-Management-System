@@ -1,4 +1,4 @@
-// src/App.js - Updated with ProjectContext integration
+// src/App-SuperAdmin.js - Updated with SuperAdmin routing
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
@@ -12,7 +12,10 @@ import { ProjectProvider } from './contexts/ProjectContext';
 import Login from './Pages/Auth/Login';
 import ProtectedRoute from './Components/Common/ProtectedRoute';
 import Layout from './Components/Common/Layout/Layout';
+
+// Import dashboard components
 import SupervisorDashboard from './Pages/Supervisor/SupervisorDashboard';
+import SuperAdminDashboard from './Pages/SuperAdmin/SuperAdminDashboard';
 import { getFlatRoutes } from './routes/index';
 
 // Create theme
@@ -39,17 +42,63 @@ const LoadingFallback = () => (
   </Box>
 );
 
+const RoleBasedRedirect = () => {
+  const storedUser = localStorage.getItem('user');
+  
+  console.log('RoleBasedRedirect: Checking stored user...', storedUser); // Debug
+
+  if (!storedUser) {
+    console.log('RoleBasedRedirect: No user found, redirecting to login'); // Debug
+    return <Navigate to="/login" replace />;
+  }
+
+  try {
+    const user = JSON.parse(storedUser);
+    console.log('RoleBasedRedirect: Parsed user:', user); // Debug
+    
+    switch (user.role) {
+      case 'superadmin':
+        console.log('RoleBasedRedirect: Redirecting to /superadmin'); // Debug
+        return <Navigate to="/superadmin" replace />;
+      case 'admin':
+        console.log('RoleBasedRedirect: Redirecting to /admin'); // Debug
+        return <Navigate to="/admin" replace />;
+      case 'supervisor':
+        console.log('RoleBasedRedirect: Redirecting to /supervisor'); // Debug
+        return <Navigate to="/supervisor" replace />;
+      default:
+        console.log('RoleBasedRedirect: Unknown role, redirecting to login'); // Debug
+        return <Navigate to="/login" replace />;
+    }
+  } catch (error) {
+    console.error('RoleBasedRedirect: Error parsing user data:', error); // Debug
+    // If there's an error parsing user data, redirect to login
+    return <Navigate to="/login" replace />;
+  }
+};
 function App() {
+    console.log('App: Rendering App component'); // Debug
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
         <ProjectProvider>
-          <Router>
-            <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<LoadingFallback />}>
+            <Router>
               <Routes>
                 {/* Public Login Route */}
                 <Route path="/login" element={<Login />} />
+
+                {/* SuperAdmin Routes */}
+                <Route 
+                  path="/superadmin/*" 
+                  element={
+                    <ProtectedRoute requiredRole="superadmin">
+                      <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  } 
+                />
 
                 {/* Admin Routes */}
                 <Route
@@ -71,28 +120,58 @@ function App() {
                   }
                 />
 
-                {/* Supervisor Routes - Updated to use new dashboard */}
-                <Route
-                  path="/supervisor/*"
+                {/* Supervisor Routes */}
+                <Route 
+                  path="/supervisor/*" 
                   element={
                     <ProtectedRoute requiredRole="supervisor">
                       <SupervisorDashboard />
                     </ProtectedRoute>
-                  }
+                  } 
                 />
 
-                {/* Default redirect to login */}
-                <Route path="/" element={<Navigate to="/login" replace />} />
+                {/* Default redirect logic based on role */}
+                <Route 
+                  path="/" 
+                  element={<RoleBasedRedirect />} 
+                />
 
                 {/* Fallback route */}
                 <Route path="*" element={<Navigate to="/login" replace />} />
               </Routes>
-            </Suspense>
-          </Router>
+            </Router>
+          </Suspense>
         </ProjectProvider>
       </AuthProvider>
     </ThemeProvider>
   );
 }
+
+// Component to handle role-based redirects
+// const RoleBasedRedirect = () => {
+//   const storedUser = localStorage.getItem('user');
+  
+//   if (!storedUser) {
+//     return <Navigate to="/login" replace />;
+//   }
+
+//   try {
+//     const user = JSON.parse(storedUser);
+    
+//     switch (user.role) {
+//       case 'superadmin':
+//         return <Navigate to="/superadmin" replace />;
+//       case 'admin':
+//         return <Navigate to="/admin" replace />;
+//       case 'supervisor':
+//         return <Navigate to="/supervisor" replace />;
+//       default:
+//         return <Navigate to="/login" replace />;
+//     }
+//   } catch (error) {
+//     // If there's an error parsing user data, redirect to login
+//     return <Navigate to="/login" replace />;
+//   }
+// };
 
 export default App;

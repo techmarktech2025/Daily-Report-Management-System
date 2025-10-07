@@ -1,4 +1,4 @@
-// src/contexts/AuthContext.jsx
+// src/contexts/AuthContext.jsx - Complete Fixed Version with Debug
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext();
@@ -16,38 +16,65 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('AuthProvider: Initializing...'); // Debug
+    
     // Check if user is logged in on app load
     const storedUser = localStorage.getItem('user');
+    
+    console.log('AuthProvider: Stored user:', storedUser); // Debug
+    
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        console.log('AuthProvider: Parsed user:', parsedUser); // Debug
+        setUser(parsedUser);
+      } catch (error) {
+        console.error('AuthProvider: Error parsing stored user:', error); // Debug
+        localStorage.removeItem('user'); // Clean up invalid data
+      }
     }
+    
     setLoading(false);
+    console.log('AuthProvider: Initialization complete'); // Debug
   }, []);
 
   const login = async (credentials) => {
+    console.log('AuthProvider: Login attempt with credentials:', credentials); // Debug
+    
     try {
       // Simulate API call - replace with your actual API
       const response = await mockLogin(credentials);
       
+      console.log('AuthProvider: Login response:', response); // Debug
+      
       if (response.success) {
         const userData = response.user;
+        console.log('AuthProvider: Setting user data:', userData); // Debug
+        
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
         localStorage.setItem('userToken', response.token);
+        
+        console.log('AuthProvider: Login successful, user stored'); // Debug
         return { success: true, user: userData };
       } else {
+        console.log('AuthProvider: Login failed:', response.error); // Debug
         return { success: false, error: response.error };
       }
     } catch (error) {
+      console.error('AuthProvider: Login error:', error); // Debug
       return { success: false, error: 'Login failed. Please try again.' };
     }
   };
 
   const logout = () => {
+    console.log('AuthProvider: Logging out user'); // Debug
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('userToken');
   };
+
+  console.log('AuthProvider: Current user state:', user); // Debug
 
   return (
     <AuthContext.Provider value={{ user, login, logout, loading }}>
@@ -58,11 +85,22 @@ export const AuthProvider = ({ children }) => {
 
 // Mock login function - replace with your actual API call
 const mockLogin = async (credentials) => {
+  console.log('mockLogin: Called with credentials:', credentials); // Debug
+  
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 1000));
   
-  // Mock users database
+  // Mock users database with SuperAdmin
   const mockUsers = [
+    {
+      id: 0,
+      username: 'superadmin',
+      password: 'super123',
+      role: 'superadmin',
+      name: 'Super Administrator',
+      email: 'superadmin@techmark.tech',
+      permissions: ['all_projects', 'user_management', 'system_config', 'analytics', 'reports']
+    },
     {
       id: 1,
       username: 'admin',
@@ -70,7 +108,7 @@ const mockLogin = async (credentials) => {
       role: 'admin',
       name: 'Admin User',
       email: 'admin@company.com',
-      permissions: ['all']
+      permissions: ['project_management', 'user_management']
     },
     {
       id: 2,
@@ -108,21 +146,31 @@ const mockLogin = async (credentials) => {
     }
   ];
 
+  console.log('mockLogin: Available users:', mockUsers.map(u => ({ username: u.username, role: u.role }))); // Debug
+
   const user = mockUsers.find(u => 
     u.username === credentials.username && u.password === credentials.password
   );
 
+  console.log('mockLogin: Found user:', user ? { username: user.username, role: user.role } : 'None'); // Debug
+
   if (user) {
     const { password, ...userWithoutPassword } = user;
-    return {
+    const result = {
       success: true,
       user: userWithoutPassword,
       token: 'mock-jwt-token-' + user.id
     };
+    
+    console.log('mockLogin: Returning success result:', result); // Debug
+    return result;
   } else {
-    return {
+    const result = {
       success: false,
       error: 'Invalid username or password'
     };
+    
+    console.log('mockLogin: Returning error result:', result); // Debug
+    return result;
   }
 };
