@@ -1,4 +1,4 @@
-// src/App-SuperAdmin.js - Updated with SuperAdmin routing
+// src/App.js - Updated with Complete Admin Dashboard
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
@@ -16,7 +16,7 @@ import Layout from './Components/Common/Layout/Layout';
 // Import dashboard components
 import SupervisorDashboard from './Pages/Supervisor/SupervisorDashboard';
 import SuperAdminDashboard from './Pages/SuperAdmin/SuperAdminDashboard';
-import { getFlatRoutes } from './routes/index';
+import AdminDashboard from './Pages/Admin/AdminDashboard';  // NEW: Complete Admin Dashboard
 
 // Create theme
 const theme = createTheme({
@@ -42,6 +42,7 @@ const LoadingFallback = () => (
   </Box>
 );
 
+// Component to handle role-based redirects
 const RoleBasedRedirect = () => {
   const storedUser = localStorage.getItem('user');
   
@@ -76,8 +77,9 @@ const RoleBasedRedirect = () => {
     return <Navigate to="/login" replace />;
   }
 };
+
 function App() {
-    console.log('App: Rendering App component'); // Debug
+  console.log('App: Rendering App component'); // Debug
 
   return (
     <ThemeProvider theme={theme}>
@@ -100,22 +102,12 @@ function App() {
                   } 
                 />
 
-                {/* Admin Routes */}
+                {/* Admin Routes - NEW: Complete Admin Dashboard */}
                 <Route
                   path="/admin/*"
                   element={
                     <ProtectedRoute requiredRole="admin">
-                      <Layout>
-                        <Routes>
-                          {getFlatRoutes().map((route) => (
-                            <Route
-                              key={route.path}
-                              path={route.path.replace('/admin', '')}
-                              element={<route.component />}
-                            />
-                          ))}
-                        </Routes>
-                      </Layout>
+                      <AdminDashboard />
                     </ProtectedRoute>
                   }
                 />
@@ -146,32 +138,5 @@ function App() {
     </ThemeProvider>
   );
 }
-
-// Component to handle role-based redirects
-// const RoleBasedRedirect = () => {
-//   const storedUser = localStorage.getItem('user');
-  
-//   if (!storedUser) {
-//     return <Navigate to="/login" replace />;
-//   }
-
-//   try {
-//     const user = JSON.parse(storedUser);
-    
-//     switch (user.role) {
-//       case 'superadmin':
-//         return <Navigate to="/superadmin" replace />;
-//       case 'admin':
-//         return <Navigate to="/admin" replace />;
-//       case 'supervisor':
-//         return <Navigate to="/supervisor" replace />;
-//       default:
-//         return <Navigate to="/login" replace />;
-//     }
-//   } catch (error) {
-//     // If there's an error parsing user data, redirect to login
-//     return <Navigate to="/login" replace />;
-//   }
-// };
 
 export default App;
