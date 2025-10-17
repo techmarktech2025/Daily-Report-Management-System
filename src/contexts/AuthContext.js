@@ -1,5 +1,6 @@
-// src/contexts/AuthContext.jsx - Complete Fixed Version with Debug
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import apiService from '../services/api';
+import { toast } from 'react-toastify';
 
 const AuthContext = createContext();
 
@@ -14,163 +15,218 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState('checking');
 
+  // Initialize authentication on app load
   useEffect(() => {
-    console.log('AuthProvider: Initializing...'); // Debug
-    
-    // Check if user is logged in on app load
-    const storedUser = localStorage.getItem('user');
-    
-    console.log('AuthProvider: Stored user:', storedUser); // Debug
-    
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        console.log('AuthProvider: Parsed user:', parsedUser); // Debug
-        setUser(parsedUser);
-      } catch (error) {
-        console.error('AuthProvider: Error parsing stored user:', error); // Debug
-        localStorage.removeItem('user'); // Clean up invalid data
-      }
-    }
-    
-    setLoading(false);
-    console.log('AuthProvider: Initialization complete'); // Debug
+    initializeAuth();
   }, []);
 
-  const login = async (credentials) => {
-    console.log('AuthProvider: Login attempt with credentials:', credentials); // Debug
-    
+  const initializeAuth = async () => {
     try {
-      // Simulate API call - replace with your actual API
-      const response = await mockLogin(credentials);
+      // Test API connection
+      await apiService.utils.healthCheck();
+      setConnectionStatus('connected');
       
-      console.log('AuthProvider: Login response:', response); // Debug
-      
-      if (response.success) {
-        const userData = response.user;
-        console.log('AuthProvider: Setting user data:', userData); // Debug
-        
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
-        localStorage.setItem('userToken', response.token);
-        
-        console.log('AuthProvider: Login successful, user stored'); // Debug
-        return { success: true, user: userData };
-      } else {
-        console.log('AuthProvider: Login failed:', response.error); // Debug
-        return { success: false, error: response.error };
+      const token = localStorage.getItem('userToken');
+      const storedUser = localStorage.getItem('user');
+
+      if (token && storedUser) {
+        try {
+          // Verify token with backend
+          const response = await apiService.auth.me();
+          if (response.data.success) {
+            setUser(response.data.data);
+            console.log('✅ User authenticated via API:', response.data.data);
+          }
+        } catch (error) {
+          console.error('❌ Token verification failed:', error);
+          localStorage.removeItem('userToken');
+          localStorage.removeItem('user');
+        }
       }
     } catch (error) {
-      console.error('AuthProvider: Login error:', error); // Debug
-      return { success: false, error: 'Login failed. Please try again.' };
+      console.error('❌ API connection failed:', error);
+      setConnectionStatus('disconnected');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const logout = () => {
-    console.log('AuthProvider: Logging out user'); // Debug
-    setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('userToken');
+  const login = useCallback(async (credentials) => {
+    try {
+      setLoading(true);
+      const response = await apiService.auth.login(credentials);
+      
+      if (response.data.success) {
+        const { user: userData, token, refreshToken } = response.data;
+        
+        setUser(userData);
+        localStorage.setItem('userToken', token);
+        localStorage.setItem('user', JSON.stringify(userData));
+        
+        if (refreshToken) {
+          localStorage.setItem('refreshToken', refreshToken);
+        }
+        
+        toast.success(`Welcome back, ${userData.name}!`);
+        return { success: true, user: userData };
+      }
+    } catch (error) {
+      const errorMessage = error.message || 'Login failed. Please try again.';
+      toast.error(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const register = useCallback(async (userData) => {
+    try {
+      setLoading(true);
+      const response = await apiService.auth.register(userData);
+      
+      if (response.data.success) {
+        const { user: newUser, token, refreshToken } = response.data;
+        
+        setUser(newUser);
+        localStorage.setItem('userToken', token);
+        localStorage.setItem('user', JSON.stringify(newUser));
+        
+        if (refreshToken) {
+          localStorage.setItem('refreshToken', refreshToken);
+        }
+        
+        toast.success('Registration successful!');
+        return { success: true, user: newUser };
+      }
+    } catch (error) {
+      const errorMessage = error.message || 'Registration failed. Please try again.';
+      toast.error(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await apiService.auth.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      localStorage.removeItem('userToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      toast.success('Logged out successfully');
+    }
+  }, []);
+
+  const updateProfile = useCallback(async (profileData) => {
+    try {
+      const response = await apiService.auth.updateProfile(profileData);
+      
+      if (response.data.success) {
+        const updatedUser = { ...user, ...response.data.data };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        toast.success('Profile updated successfully');
+        return { success: true };
+      }
+    } catch (error) {
+      const errorMessage = error.message || 'Failed to update profile';
+      toast.error(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }, [user]);
+
+  const changePassword = useCallback(async (passwordData) => {
+    try {
+      const response = await apiService.auth.changePassword(passwordData);
+      
+      if (response.data.success) {
+        toast.success('Password changed successfully');
+        return { success: true };
+      }
+    } catch (error) {
+      const errorMessage = error.message || 'Failed to change password';
+      toast.error(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }, []);
+
+  const refreshToken = useCallback(async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
+
+      const response = await apiService.auth.refreshToken(refreshToken);
+      
+      if (response.data.success) {
+        const { token, refreshToken: newRefreshToken } = response.data;
+        
+        localStorage.setItem('userToken', token);
+        if (newRefreshToken) {
+          localStorage.setItem('refreshToken', newRefreshToken);
+        }
+        
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      logout();
+      return { success: false };
+    }
+  }, [logout]);
+
+  // Helper functions
+  const hasPermission = useCallback((permission) => {
+    if (!user) return false;
+    if (user.role === 'superadmin') return true;
+    return user.permissions && user.permissions.includes(permission);
+  }, [user]);
+
+  const hasRole = useCallback((roles) => {
+    if (!user) return false;
+    return Array.isArray(roles) ? roles.includes(user.role) : user.role === roles;
+  }, [user]);
+
+  const canAccessProject = useCallback((projectId) => {
+    if (!user) return false;
+    if (['superadmin', 'admin'].includes(user.role)) return true;
+    
+    // Additional logic for supervisor project access
+    // This would depend on your project assignment logic
+    return false;
+  }, [user]);
+
+  const value = {
+    user,
+    loading,
+    connectionStatus,
+    login,
+    register,
+    logout,
+    updateProfile,
+    changePassword,
+    refreshToken,
+    hasPermission,
+    hasRole,
+    canAccessProject,
+    
+    // Computed values
+    isAuthenticated: !!user,
+    isSuperAdmin: user?.role === 'superadmin',
+    isAdmin: ['superadmin', 'admin'].includes(user?.role),
+    isSupervisor: user?.role === 'supervisor',
   };
 
-  console.log('AuthProvider: Current user state:', user); // Debug
-
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
-};
-
-// Mock login function - replace with your actual API call
-const mockLogin = async (credentials) => {
-  console.log('mockLogin: Called with credentials:', credentials); // Debug
-  
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Mock users database with SuperAdmin
-  const mockUsers = [
-    {
-      id: 0,
-      username: 'superadmin',
-      password: 'super123',
-      role: 'superadmin',
-      name: 'Super Administrator',
-      email: 'superadmin@techmark.tech',
-      permissions: ['all_projects', 'user_management', 'system_config', 'analytics', 'reports']
-    },
-    {
-      id: 1,
-      username: 'admin',
-      password: 'admin123',
-      role: 'admin',
-      name: 'Admin User',
-      email: 'admin@company.com',
-      permissions: ['project_management', 'user_management']
-    },
-    {
-      id: 2,
-      username: 'supervisor1',
-      password: 'super123',
-      role: 'supervisor',
-      name: 'Rajesh Kumar',
-      employeeId: 'SUP001',
-      email: 'rajesh@company.com',
-      assignedProjects: [
-        {
-          id: 'PROJ-001',
-          name: 'Project Alpha',
-          location: 'Mumbai Site-1',
-          startDate: '2025-01-15'
-        }
-      ]
-    },
-    {
-      id: 3,
-      username: 'supervisor2', 
-      password: 'super123',
-      role: 'supervisor',
-      name: 'Priya Sharma',
-      employeeId: 'SUP002',
-      email: 'priya@company.com',
-      assignedProjects: [
-        {
-          id: 'PROJ-002',
-          name: 'Project Beta',
-          location: 'Delhi Site-2',
-          startDate: '2025-02-01'
-        }
-      ]
-    }
-  ];
-
-  console.log('mockLogin: Available users:', mockUsers.map(u => ({ username: u.username, role: u.role }))); // Debug
-
-  const user = mockUsers.find(u => 
-    u.username === credentials.username && u.password === credentials.password
-  );
-
-  console.log('mockLogin: Found user:', user ? { username: user.username, role: user.role } : 'None'); // Debug
-
-  if (user) {
-    const { password, ...userWithoutPassword } = user;
-    const result = {
-      success: true,
-      user: userWithoutPassword,
-      token: 'mock-jwt-token-' + user.id
-    };
-    
-    console.log('mockLogin: Returning success result:', result); // Debug
-    return result;
-  } else {
-    const result = {
-      success: false,
-      error: 'Invalid username or password'
-    };
-    
-    console.log('mockLogin: Returning error result:', result); // Debug
-    return result;
-  }
 };

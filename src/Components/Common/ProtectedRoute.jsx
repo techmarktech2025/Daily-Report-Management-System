@@ -1,51 +1,72 @@
-// src/Components/Common/ProtectedRoute.jsx - Fixed for SuperAdmin
 import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { Navigate, useLocation } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
+import { useAuth } from '../../contexts/AuthContext';
 
-const ProtectedRoute = ({ children, requiredRole }) => {
-  const { user, loading } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles = [] }) => {
+  const { user, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
-  // Show loading while checking authentication
+  // Show loading spinner while checking authentication
   if (loading) {
     return (
       <Box
-        display="flex"
-        flexDirection="column"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="100vh"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          backgroundColor: '#f5f5f5',
+        }}
       >
-        <CircularProgress />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          Verifying access...
+        <CircularProgress size={60} />
+        <Typography variant="h6" sx={{ mt: 2, color: 'text.secondary' }}>
+          Loading...
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+          Please wait while we verify your session
         </Typography>
       </Box>
     );
   }
 
-  // If no user is logged in, redirect to login
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  // Redirect to login if not authenticated
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Check if user has the required role
-  if (requiredRole && user.role !== requiredRole) {
-    // Redirect based on user's actual role
-    switch (user.role) {
-      case 'superadmin':
-        return <Navigate to="/superadmin" replace />;
-      case 'admin':
-        return <Navigate to="/admin" replace />;
-      case 'supervisor':
-        return <Navigate to="/supervisor" replace />;
-      default:
-        return <Navigate to="/login" replace />;
-    }
+  // Check role-based access if allowedRoles is specified
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          textAlign: 'center',
+          p: 3,
+        }}
+      >
+        <Typography variant="h4" color="error" gutterBottom>
+          Access Denied
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          You don't have permission to access this page.
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Required roles: {allowedRoles.join(', ')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Your role: {user.role}
+        </Typography>
+      </Box>
+    );
   }
 
-  // User has correct role, render the protected content
+  // Render protected content
   return children;
 };
 
